@@ -1,8 +1,12 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+import { Alert } from 'react-native';
 import { supabase } from '../services/supabase';
 import { authService, UserProfile } from '../services/authService';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export type UserRole = 'owner' | 'trainer' | 'member' | 'super_admin';
 
@@ -26,6 +30,7 @@ interface AuthContextType {
   user: User | null;
   login: (email: string, password?: string) => Promise<User>;
   signup: (userData: { name: string; email: string; role: 'owner' | 'trainer' | 'member'; password?: string }) => Promise<User | null>;
+  loginWithGoogle: (role?: 'owner' | 'trainer' | 'member') => Promise<User | null>;
   logout: () => Promise<void>;
   updateUser: (data: Partial<User>) => Promise<void>;
   isLoading: boolean;
@@ -153,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       // Map 'owner' (App role) -> 'gym_owner' (DB role)
       const mappedRole = userData.role === 'owner' ? 'gym_owner' : userData.role;
-      const redirectUrl = Linking.createURL('/(auth)/login');
+      const redirectUrl = Linking.createURL('/');
 
       const { data, error } = await supabase.auth.signUp({
         email: userData.email,
@@ -210,6 +215,85 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithGoogle = async (role: 'owner' | 'trainer' | 'member' = 'member'): Promise<User | null> => {
+    setIsLoading(true);
+    try {
+      const redirectUrl = Linking.createURL('/');
+      console.log('[Google Auth] Generated redirectUrl:', redirectUrl);
+      
+      await new Promise<void>((resolve) => {
+        Alert.alert(
+          'Redirect Debugger',
+          `Redirect URL: ${redirectUrl}\n\nPlease click Proceed to test.`,
+          [{ text: 'Proceed', onPress: () => resolve() }],
+          { cancelable: false }
+        );
+      });
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error('No OAuth URL returned');
+      console.log('[Google Auth] Supabase OAuth URL:', data.url);
+
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
+
+      if (result.type === 'success' && result.url) {
+        const hash = result.url.split('#')[1];
+        if (hash) {
+          const params = Object.fromEntries(new URLSearchParams(hash));
+          const accessToken = params.access_token;
+          const refreshToken = params.refresh_token;
+
+          if (accessToken && refreshToken) {
+            const { data: authData, error: sessionError } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+
+            if (sessionError) throw sessionError;
+            if (!authData.user) throw new Error('No user returned after Google session setup');
+
+            let profile = null;
+            let retries = 5;
+            while (retries > 0 && !profile) {
+              profile = await authService.getProfile(authData.user.id);
+              if (!profile) {
+                await new Promise((r) => setTimeout(r, 500));
+                retries--;
+              }
+            }
+
+            const mappedRole = role === 'owner' ? 'gym_owner' : role;
+            if (!profile) {
+              profile = await authService.updateProfile(authData.user.id, {
+                full_name: authData.user.user_metadata.full_name || authData.user.email?.split('@')[0] || 'Google User',
+                role: mappedRole as any,
+              });
+            } else if (profile.role === 'member' && mappedRole !== 'member') {
+              profile = await authService.updateProfile(authData.user.id, {
+                role: mappedRole as any,
+              });
+            }
+
+            const syncedUser = mapProfileToUser(profile);
+            setUser(syncedUser);
+            await AsyncStorage.setItem('fitpulse_user', JSON.stringify(syncedUser));
+            return syncedUser;
+          }
+        }
+      }
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const logout = async () => {
     setIsLoading(true);
     try {
@@ -250,7 +334,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, signup, logout, updateUser, isLoading }}>
+    <AuthContext.Provider value={{ user, login, signup, loginWithGoogle, logout, updateUser, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

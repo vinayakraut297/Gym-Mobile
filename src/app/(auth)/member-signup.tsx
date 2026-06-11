@@ -23,7 +23,7 @@ const COLORS = {
 
 export default function MemberSignupScreen() {
   const router = useRouter();
-  const { signup, isLoading } = useAuth();
+  const { signup, loginWithGoogle, isLoading } = useAuth();
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -60,6 +60,18 @@ export default function MemberSignupScreen() {
       }
     } catch (err: any) {
       setError(err.message || 'Signup failed. Please try again.');
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    setError('');
+    try {
+      const user = await loginWithGoogle('member');
+      if (user) {
+        router.replace('/onboarding');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Google Sign-In failed');
     }
   };
 
@@ -189,7 +201,9 @@ export default function MemberSignupScreen() {
                   </View>
 
                   <Pressable
-                    style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.8 }]}
+                    onPress={handleGoogleSignup}
+                    disabled={isLoading}
+                    style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.8 }, isLoading && { opacity: 0.6 }]}
                   >
                     <Text style={styles.googleBtnText}>G</Text>
                     <Text style={styles.googleBtnLabel}>Continue with Google</Text>

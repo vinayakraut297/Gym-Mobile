@@ -23,7 +23,7 @@ const COLORS = {
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, isLoading } = useAuth();
+  const { login, loginWithGoogle, isLoading } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,6 +55,19 @@ export default function LoginScreen() {
       router.replace(user.onboarded ? `/dashboard/${targetRole}` : '/onboarding');
     } catch (err: any) {
       setError(err.message || 'Login failed. Check your credentials.');
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError('');
+    try {
+      const user = await loginWithGoogle('member');
+      if (user) {
+        const targetRole = (user.role === 'super_admin' ? 'owner' : user.role) as 'owner' | 'trainer' | 'member';
+        router.replace(user.onboarded ? `/dashboard/${targetRole}` : '/onboarding');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Google Sign-In failed');
     }
   };
 
@@ -145,7 +158,9 @@ export default function LoginScreen() {
               </View>
 
               <Pressable
-                style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.8 }]}
+                onPress={handleGoogleLogin}
+                disabled={isLoading}
+                style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.8 }, isLoading && { opacity: 0.6 }]}
               >
                 <Text style={styles.googleBtnText}>G</Text>
                 <Text style={styles.googleBtnLabel}>Continue with Google</Text>
