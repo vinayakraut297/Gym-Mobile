@@ -21,7 +21,8 @@ export default function RootIndex() {
   } else if (!user.onboarded) {
     return <Redirect href="/onboarding" />;
   } else {
-    return <Redirect href={`/dashboard/${user.role}`} />;
+    const routeRole = (user.role === 'super_admin' ? 'owner' : user.role) as 'member' | 'owner' | 'trainer';
+    return <Redirect href={`/dashboard/${routeRole}`} />;
   }
 }
 

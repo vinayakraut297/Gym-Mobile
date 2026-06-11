@@ -1,123 +1,251 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_URL } from '@/lib/api';
+import * as Linking from 'expo-linking';
+import { supabase } from '../services/supabase';
+import { authService, UserProfile } from '../services/authService';
 
-type UserRole = 'owner' | 'trainer' | 'member';
+export type UserRole = 'owner' | 'trainer' | 'member' | 'super_admin';
 
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
   role: UserRole;
-  branch: string;
+  branch?: string;
   onboarded?: boolean;
-  dietPreference?: 'Vegetarian' | 'Vegan' | 'Non-Vegetarian' | '';
+  dietPreference?: string;
   status?: string;
   streak?: number;
   healthScore?: number;
   phone?: string;
   goal?: string;
+  avatar_url?: string | null;
 }
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string) => Promise<User>;
-  signup: (userData: any) => Promise<User>;
-  logout: () => void;
-  updateUser: (data: Partial<User>) => void;
+  login: (email: string, password?: string) => Promise<User>;
+  signup: (userData: { name: string; email: string; role: 'owner' | 'trainer' | 'member'; password?: string }) => Promise<User | null>;
+  logout: () => Promise<void>;
+  updateUser: (data: Partial<User>) => Promise<void>;
   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Helper function to map Supabase database profile to App User model
+function mapProfileToUser(profile: UserProfile): User {
+  // Map 'gym_owner' (DB role) -> 'owner' (App role)
+  const mappedRole: UserRole = profile.role === 'gym_owner' ? 'owner' : profile.role;
+  
+  return {
+    id: profile.id,
+    name: profile.full_name || profile.email.split('@')[0],
+    email: profile.email,
+    role: mappedRole,
+    avatar_url: profile.avatar_url,
+    phone: profile.phone || undefined,
+    // Add default fallbacks for local App views
+    onboarded: true, // We can determine this from onboarding records or default to true
+    status: 'active',
+    streak: 0,
+    healthScore: 70,
+  };
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Sync profile data on mount and session change
+  const syncProfile = async (userId: string): Promise<User | null> => {
+    try {
+      const profile = await authService.getProfile(userId);
+      if (profile) {
+        const mappedUser = mapProfileToUser(profile);
+        setUser(mappedUser);
+        await AsyncStorage.setItem('fitpulse_user', JSON.stringify(mappedUser));
+        return mappedUser;
+      }
+    } catch (e) {
+      console.error('Failed to sync profile from Supabase', e);
+    }
+    return null;
+  };
 
   useEffect(() => {
-    const loadStoredUser = async () => {
+    // 1. Check active session on startup
+    const checkSession = async () => {
+      setIsLoading(true);
       try {
-        const storedUser = await AsyncStorage.getItem('fitpulse_user');
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          await syncProfile(session.user.id);
+        } else {
+          // If no session is active, try loading cached local user if any
+          const storedUser = await AsyncStorage.getItem('fitpulse_user');
+          if (storedUser) {
+            setUser(JSON.parse(storedUser));
+          }
         }
       } catch (e) {
-        console.error("Failed to load user from AsyncStorage", e);
+        console.error('Session restoration failed', e);
+      } finally {
+        setIsLoading(false);
       }
     };
-    loadStoredUser();
+
+    checkSession();
+
+    // 2. Subscribe to auth state updates
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      setIsLoading(true);
+      if (session?.user) {
+        await syncProfile(session.user.id);
+      } else {
+        setUser(null);
+        await AsyncStorage.removeItem('fitpulse_user');
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
-  const login = async (email: string) => {
+  const login = async (email: string, password?: string): Promise<User> => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+      // Use fallback password for quick demo logins if none provided
+      const resolvedPassword = password || 'password';
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password: resolvedPassword,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-        await AsyncStorage.setItem('fitpulse_user', JSON.stringify(data.user));
-        await AsyncStorage.setItem('fitpulse_token', data.token);
-        return data.user;
-      } else {
-        const error = await res.json();
-        throw new Error(error.error || 'Login failed');
-      }
+
+      if (error) throw error;
+      if (!data.user) throw new Error('No user returned from sign in');
+
+      const syncedUser = await syncProfile(data.user.id);
+      if (!syncedUser) throw new Error('Failed to load user profile after sign in');
+
+      return syncedUser;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const signup = async (userData: any) => {
+  const signup = async (userData: { name: string; email: string; role: 'owner' | 'trainer' | 'member'; password?: string }): Promise<User | null> => {
+    // 1. Check rate limit
+    const lastSignupStr = await AsyncStorage.getItem('fitpulse_last_signup_time');
+    const now = Date.now();
+    const cooldown = 60000; // 60 seconds cooldown
+    if (lastSignupStr) {
+      const lastSignup = parseInt(lastSignupStr, 10);
+      if (now - lastSignup < cooldown) {
+        const remaining = Math.ceil((cooldown - (now - lastSignup)) / 1000);
+        throw new Error(`Please wait ${remaining} seconds before signing up again.`);
+      }
+    }
+
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/api/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData)
+      // Map 'owner' (App role) -> 'gym_owner' (DB role)
+      const mappedRole = userData.role === 'owner' ? 'gym_owner' : userData.role;
+      const redirectUrl = Linking.createURL('/(auth)/login');
+
+      const { data, error } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password || 'password',
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            full_name: userData.name,
+            role: mappedRole,
+          },
+        },
       });
-      if (res.ok) {
-        const data = await res.json();
-        setUser(data.user);
-        await AsyncStorage.setItem('fitpulse_user', JSON.stringify(data.user));
-        await AsyncStorage.setItem('fitpulse_token', data.token);
-        return data.user;
-      } else {
-        const error = await res.json();
-        throw new Error(error.error || 'Signup failed');
+
+      if (error) {
+        if (error.status === 429 || error.message.toLowerCase().includes('rate limit')) {
+          throw new Error('Email rate limit exceeded. Please check your inbox or try again in a few minutes.');
+        }
+        if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('user already exists')) {
+          throw new Error('This email is already registered. Please sign in instead.');
+        }
+        throw error;
       }
+      if (!data.user) throw new Error('No user returned from signup');
+
+      // Set cooldown on successful call (or even rate limited attempt to protect the API)
+      await AsyncStorage.setItem('fitpulse_last_signup_time', now.toString());
+
+      // If email confirmation is enabled, session will be null
+      if (!data.session) {
+        return null;
+      }
+
+      // Wait a moment for trigger execution to populate DB profiles table
+      let profile = null;
+      let retries = 5;
+      while (retries > 0 && !profile) {
+        profile = await authService.getProfile(data.user.id);
+        if (!profile) {
+          await new Promise((r) => setTimeout(r, 500));
+          retries--;
+        }
+      }
+
+      if (!profile) {
+        throw new Error('Profile creation timed out');
+      }
+
+      const syncedUser = mapProfileToUser(profile);
+      setUser(syncedUser);
+      await AsyncStorage.setItem('fitpulse_user', JSON.stringify(syncedUser));
+      return syncedUser;
     } finally {
       setIsLoading(false);
     }
   };
 
   const logout = async () => {
-    setUser(null);
+    setIsLoading(true);
     try {
+      await supabase.auth.signOut();
+      setUser(null);
       await AsyncStorage.removeItem('fitpulse_user');
-      await AsyncStorage.removeItem('fitpulse_token');
     } catch (e) {
-      console.error(e);
+      console.error('Signout error', e);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const updateUser = async (data: Partial<User>) => {
-    if (user) {
-       const updatedUser = { ...user, ...data };
-       setUser(updatedUser);
-       try {
-         await AsyncStorage.setItem('fitpulse_user', JSON.stringify(updatedUser));
-         await fetch(`${API_URL}/api/user/update`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: user.id, ...data })
-         });
-       } catch (e) {
-         console.error(e);
-       }
+    if (!user) return;
+    setIsLoading(true);
+    try {
+      // Map properties back to database format
+      const profileUpdates: Partial<Omit<UserProfile, 'id' | 'email' | 'created_at' | 'updated_at'>> = {};
+      if (data.name !== undefined) profileUpdates.full_name = data.name;
+      if (data.phone !== undefined) profileUpdates.phone = data.phone;
+      if (data.avatar_url !== undefined) profileUpdates.avatar_url = data.avatar_url;
+      if (data.role !== undefined) {
+        profileUpdates.role = data.role === 'owner' ? 'gym_owner' : data.role as any;
+      }
+
+      const updatedProfile = await authService.updateProfile(user.id, profileUpdates);
+      if (updatedProfile) {
+        const mappedUser = mapProfileToUser(updatedProfile);
+        setUser(mappedUser);
+        await AsyncStorage.setItem('fitpulse_user', JSON.stringify(mappedUser));
+      }
+    } catch (e) {
+      console.error('Failed to update user profile', e);
+    } finally {
+      setIsLoading(false);
     }
   };
 

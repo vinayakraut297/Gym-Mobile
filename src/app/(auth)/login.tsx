@@ -1,221 +1,166 @@
-import React, { useState } from 'react';
-import { StyleSheet, View, Text, ScrollView, Pressable, useColorScheme, ActivityIndicator } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { StyleSheet, View, Text, Pressable, Animated, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Activity, ArrowLeft, MonitorPlay, Lock } from 'lucide-react-native';
-import { Input } from '@/components/ui/Input';
-import { Button } from '@/components/ui/Button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/Dialog';
-import { useAuth } from '@/context/AuthContext';
-import { Colors } from '@/constants/theme';
+import { ArrowLeft, Activity } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { Input } from '@/components/ui/Input';
+import { useAuth } from '@/context/AuthContext';
+
+const COLORS = {
+  bg: '#0a0a0f',
+  card: '#13131a',
+  cardBorder: '#1f1f2e',
+  text: '#ffffff',
+  textSecondary: '#8a8a99',
+  textMuted: '#55556a',
+  primary: '#d4af37',
+  primaryDim: 'rgba(212, 175, 55, 0.12)',
+  errorBg: 'rgba(220, 38, 38, 0.1)',
+  errorBorder: 'rgba(220, 38, 38, 0.3)',
+  errorText: '#ef4444',
+};
 
 export default function LoginScreen() {
-  const scheme = useColorScheme();
-  const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
   const router = useRouter();
-
   const { login, isLoading } = useAuth();
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  // Kiosk dialog states
-  const [showKioskUnlock, setShowKioskUnlock] = useState(false);
-  const [kioskEmail, setKioskEmail] = useState('');
-  const [kioskPassword, setKioskPassword] = useState('');
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 450, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 450, useNativeDriver: true }),
+    ]).start();
+  }, []);
 
   const handleLogin = async () => {
     if (!email) {
       setError('Please enter your email address');
       return;
     }
-    setError('');
-    try {
-      const user = await login(email);
-      router.replace(user.onboarded ? `/dashboard/${user.role}` : '/onboarding');
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
-    }
-  };
-
-  const handleKioskUnlock = async () => {
-    if (!kioskEmail) {
-      setError('Please enter your email');
+    if (!password) {
+      setError('Please enter your password');
       return;
     }
     setError('');
     try {
-      const user = await login(kioskEmail);
-      if (user.role === 'owner') {
-        setShowKioskUnlock(false);
-        router.replace('/kiosk');
-      } else {
-        setError('Only gym owners can unlock Kiosk mode.');
-      }
+      const user = await login(email, password);
+      const targetRole = (user.role === 'super_admin' ? 'owner' : user.role) as 'owner' | 'trainer' | 'member';
+      router.replace(user.onboarded ? `/dashboard/${targetRole}` : '/onboarding');
     } catch (err: any) {
-      setError(err.message || 'Unlock failed');
-    }
-  };
-
-  const loginAs = async (testEmail: string) => {
-    setError('');
-    if (showKioskUnlock) {
-      setKioskEmail(testEmail);
-      setKioskPassword('password');
-      try {
-        const user = await login(testEmail);
-        if (user.role === 'owner') {
-          setShowKioskUnlock(false);
-          router.replace('/kiosk');
-        } else {
-          setError('Only gym owners can unlock Kiosk mode.');
-        }
-      } catch (err: any) {
-        setError(err.message || 'Unlock failed');
-      }
-      return;
-    }
-
-    setEmail(testEmail);
-    setPassword('password');
-    try {
-      const user = await login(testEmail);
-      router.replace(user.onboarded ? `/dashboard/${user.role}` : '/onboarding');
-    } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(err.message || 'Login failed. Check your credentials.');
     }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Back Button */}
-        <Pressable onPress={() => router.replace('/(auth)/landing')} style={styles.backButton}>
-          <ArrowLeft size={16} color={colors.textSecondary} />
-          <Text style={[styles.backText, { color: colors.textSecondary }]}>Back</Text>
-        </Pressable>
-
-        {/* Brand */}
-        <View style={styles.brandContainer}>
-          <View style={[styles.logoBg, { backgroundColor: colors.primary }]}>
-            <Activity size={28} color={scheme === 'dark' ? '#000000' : '#ffffff'} />
-          </View>
-          <Text style={[styles.title, { color: colors.text }]}>Sign In</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Enter your credentials to access your FitPulse OS
-          </Text>
-        </View>
-
-        {/* Error Box */}
-        {error ? (
-          <View style={[styles.errorBox, { backgroundColor: colors.destructive + '15', borderColor: colors.destructive + '30' }]}>
-            <Text style={[styles.errorText, { color: colors.destructive }]}>{error}</Text>
-          </View>
-        ) : null}
-
-        {/* Inputs */}
-        <View style={styles.form}>
-          <Input
-            label="Email Address"
-            placeholder="name@example.com"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-          />
-
-          <View style={styles.pwdHeader}>
-            <Text style={[styles.pwdLabel, { color: colors.text }]}>Password</Text>
-            <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
-              <Text style={[styles.forgotText, { color: colors.primary }]}>Forgot password?</Text>
+    <SafeAreaView style={styles.container}>
+      <StatusBar style="light" />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+            {/* Back */}
+            <Pressable onPress={() => router.back()} style={styles.backBtn}>
+              <ArrowLeft size={20} color={COLORS.textSecondary} />
+              <Text style={styles.backText}>Back</Text>
             </Pressable>
-          </View>
-          <Input
-            placeholder="••••••••"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
 
-          <Button
-            title={isLoading ? 'Signing in...' : 'Sign In'}
-            onPress={handleLogin}
-            loading={isLoading}
-            style={styles.submitButton}
-          />
-        </View>
+            {/* Header */}
+            <View style={styles.headerSection}>
+              <View style={styles.iconWrap}>
+                <Activity size={28} color={COLORS.primary} />
+              </View>
+              <Text style={styles.heading}>Welcome Back</Text>
+              <Text style={styles.subtitle}>Sign in to continue your fitness journey</Text>
+            </View>
 
-        {/* Demo Accounts */}
-        <View style={[styles.demoContainer, { borderTopColor: colors.border }]}>
-          <Text style={[styles.demoHeader, { color: colors.textSecondary }]}>DEMO ACCOUNTS</Text>
-          <View style={styles.demoButtons}>
-            <Pressable onPress={() => loginAs('sarah@fitpulse.ai')} style={[styles.demoBtn, { backgroundColor: colors.secondary }]}>
-              <Text style={[styles.demoBtnText, { color: colors.text }]}>Owner</Text>
-            </Pressable>
-            <Pressable onPress={() => loginAs('mike@fitpulse.ai')} style={[styles.demoBtn, { backgroundColor: colors.secondary }]}>
-              <Text style={[styles.demoBtnText, { color: colors.text }]}>Trainer</Text>
-            </Pressable>
-            <Pressable onPress={() => loginAs('alex@example.com')} style={[styles.demoBtn, { backgroundColor: colors.secondary }]}>
-              <Text style={[styles.demoBtnText, { color: colors.text }]}>Member</Text>
-            </Pressable>
-          </View>
-        </View>
+            {/* Error */}
+            {error ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
 
-        {/* Kiosk Mode Activation */}
-        <View style={styles.kioskContainer}>
-          <Button
-            variant="outline"
-            onPress={() => setShowKioskUnlock(true)}
-            style={[styles.kioskButton, { borderColor: colors.primary }]}
-          >
-            <MonitorPlay size={18} color={colors.primary} style={{ marginRight: 8 }} />
-            <Text style={{ color: colors.primary, fontWeight: '700' }}>Launch Secure Kiosk</Text>
-          </Button>
-        </View>
-      </ScrollView>
+            {/* Form */}
+            <View style={styles.form}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Email</Text>
+                <Input
+                  placeholder="name@example.com"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
 
-      {/* Kiosk Unlock Modal */}
-      <Dialog open={showKioskUnlock} onOpenChange={setShowKioskUnlock}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Lock size={18} color={colors.primary} />
-              <Text> Unlock Kiosk Mode</Text>
-            </DialogTitle>
-            <DialogDescription>
-              Please enter your Owner credentials to launch the secure full-screen attendance kiosk.
-            </DialogDescription>
-          </DialogHeader>
+              <View style={styles.inputGroup}>
+                <View style={styles.passwordHeader}>
+                  <Text style={styles.label}>Password</Text>
+                  <Pressable onPress={() => router.push('/(auth)/forgot-password')}>
+                    <Text style={styles.forgotLink}>Forgot password?</Text>
+                  </Pressable>
+                </View>
+                <Input
+                  placeholder="••••••••"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                />
+              </View>
 
-          <View style={{ marginVertical: 12 }}>
-            <Input
-              label="Owner Email"
-              placeholder="owner@fitpulse.ai"
-              value={kioskEmail}
-              onChangeText={setKioskEmail}
-              keyboardType="email-address"
-            />
-            <Input
-              label="Password"
-              placeholder="••••••••"
-              value={kioskPassword}
-              onChangeText={setKioskPassword}
-              secureTextEntry
-            />
-          </View>
+              <Pressable
+                onPress={handleLogin}
+                disabled={isLoading}
+                style={({ pressed }) => [
+                  styles.submitBtn,
+                  pressed && { opacity: 0.85 },
+                  isLoading && { opacity: 0.6 },
+                ]}
+              >
+                <Text style={styles.submitText}>
+                  {isLoading ? 'Signing In...' : 'Sign In'}
+                </Text>
+              </Pressable>
+            </View>
 
-          <DialogFooter>
-            <Button variant="ghost" title="Cancel" onPress={() => setShowKioskUnlock(false)} />
-            <Button title="Unlock Kiosk" loading={isLoading} onPress={handleKioskUnlock} />
-          </DialogFooter>
+            {/* Footer */}
+            <View style={styles.footerLinks}>
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>Or continue with</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-          <Pressable onPress={() => loginAs('sarah@fitpulse.ai')} style={styles.quickOwnerLink}>
-            <Text style={{ color: colors.primary, fontSize: 13, textDecorationLine: 'underline' }}>
-              Quick login as Owner
-            </Text>
-          </Pressable>
-        </DialogContent>
-      </Dialog>
+              <Pressable
+                style={({ pressed }) => [styles.googleBtn, pressed && { opacity: 0.8 }]}
+              >
+                <Text style={styles.googleBtnText}>G</Text>
+                <Text style={styles.googleBtnLabel}>Continue with Google</Text>
+              </Pressable>
+
+              <View style={styles.signUpRow}>
+                <Text style={styles.footerLabel}>Don't have an account?</Text>
+                <Pressable onPress={() => router.push('/(auth)/landing')}>
+                  <Text style={styles.signUpLink}> Get Started</Text>
+                </Pressable>
+              </View>
+            </View>
+          </Animated.View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -223,113 +168,156 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: COLORS.bg,
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: 16,
     paddingBottom: 40,
   },
-  backButton: {
+  backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    alignSelf: 'flex-start',
+    gap: 6,
     paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginTop: 8,
     marginBottom: 20,
   },
   backText: {
     fontSize: 14,
+    color: COLORS.textSecondary,
     fontWeight: '500',
   },
-  brandContainer: {
+  headerSection: {
     alignItems: 'center',
     marginBottom: 32,
   },
-  logoBg: {
-    width: 56,
-    height: 56,
-    borderRadius: 14,
+  iconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: COLORS.primaryDim,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 20,
   },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+  heading: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.text,
+    letterSpacing: -0.3,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
-    textAlign: 'center',
+    fontSize: 15,
+    color: COLORS.textSecondary,
   },
   errorBox: {
-    padding: 12,
-    borderRadius: 8,
+    backgroundColor: COLORS.errorBg,
     borderWidth: 1,
+    borderColor: COLORS.errorBorder,
+    borderRadius: 12,
+    padding: 14,
     marginBottom: 20,
   },
   errorText: {
+    color: COLORS.errorText,
     fontSize: 13,
     fontWeight: '600',
   },
   form: {
-    alignSelf: 'stretch',
+    gap: 4,
   },
-  pwdHeader: {
+  inputGroup: {
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+    marginLeft: 2,
+  },
+  passwordHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
+    marginBottom: 8,
+    marginLeft: 2,
   },
-  pwdLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  forgotText: {
+  forgotLink: {
     fontSize: 12,
     fontWeight: '600',
+    color: COLORS.primary,
   },
-  submitButton: {
-    marginTop: 24,
-    height: 50,
+  submitBtn: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
   },
-  demoContainer: {
-    marginTop: 32,
-    borderTopWidth: 0.5,
-    paddingTop: 24,
+  submitText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#000',
+  },
+  footerLinks: {
+    marginTop: 28,
     alignItems: 'center',
   },
-  demoHeader: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 1.5,
-    marginBottom: 16,
-  },
-  demoButtons: {
+  dividerRow: {
     flexDirection: 'row',
-    gap: 12,
-  },
-  demoBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 99,
-  },
-  demoBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  kioskContainer: {
-    marginTop: 32,
     alignItems: 'center',
-  },
-  kioskButton: {
-    borderWidth: 1.5,
-    borderRadius: 99,
-    height: 50,
+    gap: 14,
+    marginBottom: 20,
     width: '100%',
   },
-  quickOwnerLink: {
-    marginTop: 16,
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.cardBorder,
+  },
+  dividerText: {
+    fontSize: 12,
+    color: COLORS.textMuted,
+    fontWeight: '500',
+  },
+  googleBtn: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
+    height: 50,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.card,
+  },
+  googleBtnText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.text,
+  },
+  googleBtnLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.text,
+  },
+  signUpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  footerLabel: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  signUpLink: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.primary,
   },
 });

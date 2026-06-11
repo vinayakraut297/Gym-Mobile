@@ -1,11 +1,9 @@
 import React, { useRef, useEffect } from 'react';
-import { StyleSheet, View, Text, Pressable, Animated, Dimensions } from 'react-native';
+import { StyleSheet, View, Text, Pressable, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
-import { User, Building2, ChevronRight, Activity, Sparkles } from 'lucide-react-native';
+import { User, Dumbbell, ChevronRight, ArrowLeft, ArrowRight } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-
-const { width } = Dimensions.get('window');
 
 const COLORS = {
   bg: '#0a0a0f',
@@ -17,32 +15,31 @@ const COLORS = {
   textMuted: '#55556a',
   primary: '#d4af37',
   primaryDim: 'rgba(212, 175, 55, 0.12)',
-  divider: '#1a1a28',
 };
 
-export default function GetStartedScreen() {
+export default function IndividualRoleScreen() {
   const router = useRouter();
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
   const card1Anim = useRef(new Animated.Value(0)).current;
   const card2Anim = useRef(new Animated.Value(0)).current;
-  const card1SlideAnim = useRef(new Animated.Value(40)).current;
-  const card2SlideAnim = useRef(new Animated.Value(40)).current;
+  const card1Slide = useRef(new Animated.Value(30)).current;
+  const card2Slide = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
     Animated.sequence([
       Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
       ]),
-      Animated.stagger(120, [
+      Animated.stagger(100, [
         Animated.parallel([
-          Animated.timing(card1Anim, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(card1SlideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+          Animated.timing(card1Anim, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.timing(card1Slide, { toValue: 0, duration: 350, useNativeDriver: true }),
         ]),
         Animated.parallel([
-          Animated.timing(card2Anim, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.timing(card2SlideAnim, { toValue: 0, duration: 400, useNativeDriver: true }),
+          Animated.timing(card2Anim, { toValue: 1, duration: 350, useNativeDriver: true }),
+          Animated.timing(card2Slide, { toValue: 0, duration: 350, useNativeDriver: true }),
         ]),
       ]),
     ]).start();
@@ -52,37 +49,32 @@ export default function GetStartedScreen() {
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
       <View style={styles.content}>
-        {/* Header */}
+        {/* Header with back */}
         <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.logoRow}>
-            <View style={styles.logoBg}>
-              <Activity size={20} color="#000" />
-            </View>
-            <Text style={styles.logoText}>FitPulse</Text>
-          </View>
+          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <ArrowLeft size={20} color={COLORS.textSecondary} />
+            <Text style={styles.backText}>Back</Text>
+          </Pressable>
 
           <Text style={styles.heading}>Get Started</Text>
-          <Text style={styles.subtitle}>Choose how you want to use FitPulse.</Text>
+          <Text style={styles.subtitle}>Select your role to continue.</Text>
         </Animated.View>
 
         {/* Cards */}
         <View style={styles.cardsContainer}>
-          {/* Card 1 - For Individuals */}
-          <Animated.View style={{ opacity: card1Anim, transform: [{ translateY: card1SlideAnim }] }}>
+          {/* Member */}
+          <Animated.View style={{ opacity: card1Anim, transform: [{ translateY: card1Slide }] }}>
             <Pressable
-              onPress={() => router.push('/(auth)/individual-role' as any)}
-              style={({ pressed }) => [
-                styles.card,
-                pressed && styles.cardPressed,
-              ]}
+              onPress={() => router.push('/(auth)/member-signup' as any)}
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
             >
               <View style={styles.cardInner}>
                 <View style={styles.cardIconWrap}>
                   <User size={26} color={COLORS.primary} />
                 </View>
                 <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle}>For Individuals</Text>
-                  <Text style={styles.cardSubtitle}>Track your health, workouts & diet</Text>
+                  <Text style={styles.cardTitle}>Join as Member</Text>
+                  <Text style={styles.cardSubtitle}>Track your progress and connect with your gym</Text>
                 </View>
                 <View style={styles.cardArrow}>
                   <ChevronRight size={20} color={COLORS.textMuted} />
@@ -91,22 +83,19 @@ export default function GetStartedScreen() {
             </Pressable>
           </Animated.View>
 
-          {/* Card 2 - For Gym Owners */}
-          <Animated.View style={{ opacity: card2Anim, transform: [{ translateY: card2SlideAnim }] }}>
+          {/* Trainer */}
+          <Animated.View style={{ opacity: card2Anim, transform: [{ translateY: card2Slide }] }}>
             <Pressable
-              onPress={() => router.push('/(auth)/owner-signup' as any)}
-              style={({ pressed }) => [
-                styles.card,
-                pressed && styles.cardPressed,
-              ]}
+              onPress={() => router.push('/(auth)/trainer-signup' as any)}
+              style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
             >
               <View style={styles.cardInner}>
                 <View style={styles.cardIconWrap}>
-                  <Building2 size={26} color={COLORS.primary} />
+                  <Dumbbell size={26} color={COLORS.primary} />
                 </View>
                 <View style={styles.cardContent}>
-                  <Text style={styles.cardTitle}>For Gym Owners</Text>
-                  <Text style={styles.cardSubtitle}>Manage and scale your facility</Text>
+                  <Text style={styles.cardTitle}>Join as Trainer</Text>
+                  <Text style={styles.cardSubtitle}>Manage clients, programs, and career</Text>
                 </View>
                 <View style={styles.cardArrow}>
                   <ChevronRight size={20} color={COLORS.textMuted} />
@@ -117,10 +106,17 @@ export default function GetStartedScreen() {
         </View>
 
         {/* Footer */}
-        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>  
-          <View style={styles.badgeRow}>
-            <Sparkles size={14} color={COLORS.primary} />
-            <Text style={styles.badgeText}>AI POWERED FITNESS PLATFORM</Text>
+        <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
+          <View style={styles.footerDivider} />
+          <View style={styles.footerRow}>
+            <Text style={styles.footerText}>Already have an account?</Text>
+            <Pressable
+              onPress={() => router.push('/(auth)/login')}
+              style={({ pressed }) => [styles.signInBtn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={styles.signInText}>Sign In</Text>
+              <ArrowRight size={16} color={COLORS.primary} />
+            </Pressable>
           </View>
         </Animated.View>
       </View>
@@ -139,27 +135,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   header: {
-    marginTop: 24,
+    marginTop: 16,
   },
-  logoRow: {
+  backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 40,
+    gap: 6,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginBottom: 28,
   },
-  logoBg: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: COLORS.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logoText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-    letterSpacing: -0.3,
+  backText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
   },
   heading: {
     fontSize: 34,
@@ -224,18 +213,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   footer: {
-    alignItems: 'center',
     paddingBottom: 16,
   },
-  badgeRow: {
+  footerDivider: {
+    height: 1,
+    backgroundColor: COLORS.cardBorder,
+    marginBottom: 20,
+  },
+  footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  badgeText: {
-    fontSize: 11,
+  footerText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  signInBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 99,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    backgroundColor: COLORS.card,
+  },
+  signInText: {
+    fontSize: 14,
     fontWeight: '600',
-    color: COLORS.textMuted,
-    letterSpacing: 1.8,
+    color: COLORS.primary,
   },
 });

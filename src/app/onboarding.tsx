@@ -30,7 +30,8 @@ export default function OnboardingScreen() {
 
   const finishOnboarding = () => {
     updateUser({ onboarded: true, goal, branch: gymName || 'FitPulse Elite' });
-    router.replace(`/dashboard/${user.role}`);
+    const targetRole = (user.role === 'super_admin' ? 'owner' : user.role) as 'owner' | 'trainer' | 'member';
+    router.replace(`/dashboard/${targetRole}`);
   };
 
   const renderOwnerOnboarding = () => {
